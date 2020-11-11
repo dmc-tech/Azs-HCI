@@ -13,6 +13,7 @@ $azOperationalInsights = Get-Module -ListAvailable -Name Az.OperationalInsights
 
 function Install-AzModules {
     # checks the required Powershell modules exist and if not exists, request the user permission to install.  Function taken from enable-monitoring script
+    # https://aka.ms/enable-monitoring-powershell-script
 
 
     if (($null -eq $azAccountModule) -or ($null -eq $azResourcesModule) -or ($null -eq $azOperationalInsights)) {
@@ -141,7 +142,7 @@ function Install-Choco {
 
     #requires -RunasAdministrator
     Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 
 }
 
@@ -149,7 +150,7 @@ function Install-Choco {
 function Install-Helm {
 
     #requires -RunasAdministrator
-    $chocoExist = (Get-Command ".\choco", "choco" -ErrorAction Ignore -CommandType Application) -ne $null
+    $chocoExist = $null -ne (Get-Command ".\choco", "choco" -ErrorAction Ignore -CommandType Application) 
 
     if (-not $chocoExist) {
         Install-Choco 
@@ -168,7 +169,7 @@ if (($null -eq $azAccountModule) -or ($null -eq $azResourcesModule) -or ($null -
 
 # Check if Helm exists on local system
 
-$HelmExist = (Get-Command ".\helm", "helm" -ErrorAction Ignore -CommandType Application) -ne $null
+$HelmExist = $null -ne (Get-Command ".\helm", "helm" -ErrorAction Ignore -CommandType Application)
 
 if (-not $HelmExist) {Install-Helm}
 
@@ -183,7 +184,7 @@ $aksClusters = Invoke-Command -Session $session -ScriptBlock {get-akshcicluster}
 $localWssdDir = "c:\wssd"
 
 if (-not (test-path -Path $localWssdDir -PathType Container)) {
-    md $localWssdDir | out-null
+    mkdir $localWssdDir | out-null
 }
 
 #Copy Kubectl.exe to the local machine
@@ -250,9 +251,6 @@ foreach ($aksCluster in $aksClusters) {
         #To make it easy for helm ops, copy the kubeconfig file to the default dir 
 
         copy-item -path $localConfFile -Destination $env:USERPROFILE\.kube\config
-
-
-
                 
         $kubeContext = ""
         $logAnalyticsWorkspaceResourceId = ""
