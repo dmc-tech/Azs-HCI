@@ -13,7 +13,6 @@ $azOperationalInsights = Get-Module -ListAvailable -Name Az.OperationalInsights
 
 function Install-AzModules {
     # checks the required Powershell modules exist and if not exists, request the user permission to install.  Function taken from enable-monitoring script
-    # https://aka.ms/enable-monitoring-powershell-script
 
 
     if (($null -eq $azAccountModule) -or ($null -eq $azResourcesModule) -or ($null -eq $azOperationalInsights)) {
@@ -142,7 +141,7 @@ function Install-Choco {
 
     #requires -RunasAdministrator
     Set-ExecutionPolicy Bypass -Scope Process -Force; [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072
-    Invoke-Expression ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
+    iex ((New-Object System.Net.WebClient).DownloadString('https://chocolatey.org/install.ps1'))
 
 }
 
@@ -150,7 +149,7 @@ function Install-Choco {
 function Install-Helm {
 
     #requires -RunasAdministrator
-    $chocoExist = $null -ne (Get-Command ".\choco", "choco" -ErrorAction Ignore -CommandType Application) 
+    $chocoExist = (Get-Command ".\choco", "choco" -ErrorAction Ignore -CommandType Application) -ne $null
 
     if (-not $chocoExist) {
         Install-Choco 
@@ -169,7 +168,7 @@ if (($null -eq $azAccountModule) -or ($null -eq $azResourcesModule) -or ($null -
 
 # Check if Helm exists on local system
 
-$HelmExist = $null -ne (Get-Command ".\helm", "helm" -ErrorAction Ignore -CommandType Application)
+$HelmExist = (Get-Command ".\helm", "helm" -ErrorAction Ignore -CommandType Application) -ne $null
 
 if (-not $HelmExist) {Install-Helm}
 
@@ -184,7 +183,7 @@ $aksClusters = Invoke-Command -Session $session -ScriptBlock {get-akshcicluster}
 $localWssdDir = "c:\wssd"
 
 if (-not (test-path -Path $localWssdDir -PathType Container)) {
-    mkdir $localWssdDir | out-null
+    md $localWssdDir | out-null
 }
 
 #Copy Kubectl.exe to the local machine
@@ -219,13 +218,7 @@ foreach ($aksCluster in $aksClusters) {
         $aksHciCluster = $aksCluster.Name
         $azureArcClusterResourceId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.Kubernetes/connectedClusters/$aksHciCluster"
 
-        #Onboard the cluster to Arc
-        $AzureArcClusterResource = Get-AzResource -ResourceId $azureArcClusterResourceId
-        if ($null -eq $AzureArcClusterResource) {        
-            Invoke-Command -Session $session -ScriptBlock { Install-AksHciArcOnboarding -clustername $using:aksHciCluster -location $using:location -tenantId $using:tenant -subscriptionId $using:subscriptionId -resourceGroup $using:resourceGroup -clientId $using:appId -clientSecret $using:password }
-            # Wait until the onboarding has completed...
-            . $kubectl logs job/azure-arc-onboarding -n azure-arc-onboarding --follow
-        }
+        
 
         # Run this to get the kube-config file for the cluster you want to manage. Getting the outpuit from the remote command doesn't work, so using the transcript function to 
         # record the location of the file "- kubeconfig will be written to:"
@@ -237,6 +230,8 @@ foreach ($aksCluster in $aksClusters) {
         $kubeConfRemoteFile = ((Get-Content $output.path | Where-Object {$_ -like "$regex"}) -split $regex)[1]
 
         $localConfFile = "c:\wssd\conf-$aksHciCluster"
+        # Set the kubeconfig to use the retrieved config
+
       
         if ($env:KUBECONFIG -notlike "*$localConfFile*") {
             $Env:KUBECONFIG="$Env:KUBECONFIG;$localConfFile"
@@ -251,8 +246,25 @@ foreach ($aksCluster in $aksClusters) {
         #To make it easy for helm ops, copy the kubeconfig file to the default dir 
 
         copy-item -path $localConfFile -Destination $env:USERPROFILE\.kube\config
-                
-        $kubeContext = ""
+
+        $kubeContexts = (. $kubectl config get-contexts)
+        foreach ($entry in $kubeContexts) {
+            $kubeContext = ($entry -replace '\s+', ' ').split(' ')
+            If ($kubeContext[2] -eq $aksHciCluster) {
+                $kubeContextName = $kubeContext[1]
+            }
+        }
+        #Onboard the cluster to Arc
+        $AzureArcClusterResource = Get-AzResource -ResourceId $azureArcClusterResourceId
+        if ($null -eq $AzureArcClusterResource) {        
+            Invoke-Command -Session $session -ScriptBlock { Install-AksHciArcOnboarding -clustername $using:aksHciCluster -location $using:location -tenantId $using:tenant -subscriptionId $using:subscriptionId -resourceGroup $using:resourceGroup -clientId $using:appId -clientSecret $using:password }
+            # Wait until the onboarding has completed...
+            start-sleep -Seconds 20
+            . $kubectl logs job/azure-arc-onboarding -n azure-arc-onboarding --follow
+        }
+
+             
+        $kubeContext = $kubeContextName
         $logAnalyticsWorkspaceResourceId = ""
         $proxyEndpoint = ""
 
