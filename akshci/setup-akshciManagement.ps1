@@ -7,6 +7,7 @@ $appId = "<App ID of Service Principal>"
 $password = "<Ap ID Secret>"
 $tenant = "<Tenant ID for Service Principal>"
 
+
 $azAccountModule = Get-Module -ListAvailable -Name Az.Accounts
 $azResourcesModule = Get-Module -ListAvailable -Name Az.Resources
 $azOperationalInsights = Get-Module -ListAvailable -Name Az.OperationalInsights
@@ -255,8 +256,15 @@ foreach ($aksCluster in $aksClusters) {
             }
         }
         #Onboard the cluster to Arc
-        $AzureArcClusterResource = Get-AzResource -ResourceId $azureArcClusterResourceId
-        if ($null -eq $AzureArcClusterResource) {        
+        try {
+            $AzureArcClusterResource = Get-AzResource -ResourceId $azureArcClusterResourceId
+            }
+        Catch {}
+        if ($null -eq $AzureArcClusterResource) { 
+            # Just in case someone has deleted the resource in Azure and not cleaned up       
+            Invoke-Command -Session $session -ScriptBlock { Uninstall-AksHciArcOnboarding -clustername $using:aksHciCluster}
+            # Deploy the Arc agent to the cluster
+            Start-sleep -Seconds 20
             Invoke-Command -Session $session -ScriptBlock { Install-AksHciArcOnboarding -clustername $using:aksHciCluster -location $using:location -tenantId $using:tenant -subscriptionId $using:subscriptionId -resourceGroup $using:resourceGroup -clientId $using:appId -clientSecret $using:password }
             # Wait until the onboarding has completed...
             start-sleep -Seconds 20
