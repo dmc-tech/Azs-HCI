@@ -288,6 +288,9 @@ foreach ($aksCluster in $aksClusters) {
    
 }  
 
+# make KUBECONFIG Environment Var persistent
+[System.Environment]::SetEnvironmentVariable('KUBECONFIG',$env:KUBECONFIG,[System.EnvironmentVariableTarget]::Machine)
+
 
 
 
